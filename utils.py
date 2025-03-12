@@ -5,7 +5,7 @@ import sys
 # Add the parent directory to sys.path so it can find the 'firebase' folder
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from firebase.firebase_admin_sdk import db
+from firebase_utils.firebase_admin_sdk import db
 
 def build_user_data(user_id):
     # Fetch user document from 'users' collection
