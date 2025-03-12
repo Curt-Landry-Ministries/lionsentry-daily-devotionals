@@ -4,6 +4,7 @@ __pycache__/
 *$py.class
 
 /package
+/firebase_utils/firebase_admin_sdk.json
 
 # C extensions
 *.so
