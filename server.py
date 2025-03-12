@@ -121,23 +121,21 @@ def create_daily_devotionals():
                         "isFavorite": False,
                     }
 
-                    # Compare emails in a case-insensitive manner.
-                    if user_email.lower() == "me@b3po.io":
-                        try:
-                            devotional_ref = db.collection('devotionals').add(devotional_record)
-                        except DeadlineExceeded as e:
-                            logging.error(f"DeadlineExceeded adding devotional for user {user_id}: {e}")
-                            results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on add()"})
-                            continue
-                        devotional_doc_id = devotional_ref[1].id
+                    try:
+                        devotional_ref = db.collection('devotionals').add(devotional_record)
+                    except DeadlineExceeded as e:
+                        logging.error(f"DeadlineExceeded adding devotional for user {user_id}: {e}")
+                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on add()"})
+                        continue
+                    devotional_doc_id = devotional_ref[1].id
 
-                        devotional_record["doc_id"] = devotional_doc_id
-                        try:
-                            db.collection('devotionals').document(devotional_doc_id).set(devotional_record)
-                        except DeadlineExceeded as e:
-                            logging.error(f"DeadlineExceeded setting devotional for user {user_id}: {e}")
-                            results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on set()"})
-                            continue
+                    devotional_record["doc_id"] = devotional_doc_id
+                    try:
+                        db.collection('devotionals').document(devotional_doc_id).set(devotional_record)
+                    except DeadlineExceeded as e:
+                        logging.error(f"DeadlineExceeded setting devotional for user {user_id}: {e}")
+                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on set()"})
+                        continue
 
                     logging.info(devotional_record)
                     logging.info(f"Devotional uploaded for user {user_id} ({user_email})")
