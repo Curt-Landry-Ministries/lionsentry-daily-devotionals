@@ -9,8 +9,11 @@ from firebase_utils.firebase_admin_sdk import db
 from generate_devotional import generate_devotional_content
 from google.api_core.exceptions import DeadlineExceeded  # To catch timeout errors
 
-log_filename = "./tmp/daily_devotionals.log"  # /tmp is the only writable directory in Lambda
-users_file_path = "./tmp/users.json"  # Users JSON file path
+load_dotenv()
+
+today = datetime.now()
+log_filename = f"./tmp/devotionals/{str(today.year)[-2:]}/{today.month}/daily_devotionals_{str(today.year)[-2:]}-{today.month}-{today.day}.log"
+users_file_path = "./tmp/users.json"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -20,8 +23,6 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
-
-load_dotenv()
 
 # Load existing users.json data
 def load_users_data():
@@ -41,6 +42,10 @@ def save_users_data(users_data):
             json.dump(users_data, f, indent=4)
     except IOError:
         logging.error("Error writing to users.json.")
+
+def is_valid_devotional(devotional):
+    required_fields = [ "title", "introduction", "verse", "insight", "life_application", "declaration", "prayer"]
+    return all(devotional.get(field) and devotional[field].strip() for field in required_fields)
 
 def create_daily_devotionals():
     results = []
@@ -98,14 +103,34 @@ def create_daily_devotionals():
                     if isinstance(why_statement, str):
                         why_statement = {"whyStatement": why_statement}
 
-                    devotional_content = generate_devotional_content(first_name, why_statement)
+                    # Attempt to generate valid devotional content
+                    attempts = 0
+                    max_attempts = 2
+                    devotional_content = {}
 
-                    if isinstance(devotional_content, str):
-                        try:
-                            devotional_content = json.loads(devotional_content)
-                        except json.JSONDecodeError as e:
-                            logging.error(f"Error parsing JSON from generate_devotional_content for user {user_id}: {e}")
-                            devotional_content = {}
+                    while attempts < max_attempts:
+                        raw_content = generate_devotional_content(first_name, why_statement)
+
+                        if isinstance(raw_content, str):
+                            try:
+                                devotional_content = json.loads(raw_content)
+                            except json.JSONDecodeError as e:
+                                logging.error(f"Error parsing JSON from generate_devotional_content for user {user_id}: {e}")
+                                devotional_content = {}
+                        else:
+                            devotional_content = raw_content
+
+                        if is_valid_devotional(devotional_content):
+                            break
+
+                        logging.warning(f"Generated devotional content for user {user_id} is incomplete or invalid. Retrying...")
+                        devotional_content = {}
+                        attempts += 1
+
+                    if not is_valid_devotional(devotional_content):
+                        logging.error(f"Failed to generate valid devotional content for user {user_id} after {max_attempts} attempts.")
+                        results.append({"user_id": user_id, "status": "failure", "error": "Invalid devotional content"})
+                        continue
 
                     devotional_record = {
                         "title": devotional_content.get("title", ""),
@@ -121,23 +146,22 @@ def create_daily_devotionals():
                         "isFavorite": False,
                     }
 
-                    # Compare emails in a case-insensitive manner.
-                    if user_email.lower() == "me@b3po.io":
-                        try:
-                            devotional_ref = db.collection('devotionals').add(devotional_record)
-                        except DeadlineExceeded as e:
-                            logging.error(f"DeadlineExceeded adding devotional for user {user_id}: {e}")
-                            results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on add()"})
-                            continue
-                        devotional_doc_id = devotional_ref[1].id
+                    try:
+                        devotional_ref = db.collection('devotionals').add(devotional_record)
+                    except DeadlineExceeded as e:
+                        logging.error(f"DeadlineExceeded adding devotional for user {user_id}: {e}")
+                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on add()"})
+                        continue
 
-                        devotional_record["doc_id"] = devotional_doc_id
-                        try:
-                            db.collection('devotionals').document(devotional_doc_id).set(devotional_record)
-                        except DeadlineExceeded as e:
-                            logging.error(f"DeadlineExceeded setting devotional for user {user_id}: {e}")
-                            results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on set()"})
-                            continue
+                    devotional_doc_id = devotional_ref[1].id
+                    devotional_record["doc_id"] = devotional_doc_id
+
+                    try:
+                        db.collection('devotionals').document(devotional_doc_id).set(devotional_record)
+                    except DeadlineExceeded as e:
+                        logging.error(f"DeadlineExceeded setting devotional for user {user_id}: {e}")
+                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on set()"})
+                        continue
 
                     logging.info(devotional_record)
                     logging.info(f"Devotional uploaded for user {user_id} ({user_email})")
@@ -158,6 +182,7 @@ def create_daily_devotionals():
         query = db.collection('users').order_by('__name__').start_after(last_doc).limit(batch_size)
 
     return {"message": "Devotionals created successfully", "results": results}
+
 
 def lambda_handler(event, context):
     response = create_daily_devotionals()
