@@ -9,7 +9,10 @@ from firebase_utils.firebase_admin_sdk import db
 from generate_stream_devotional import generate_devotional_content
 from google.api_core.exceptions import DeadlineExceeded
 
-log_filename = "./tmp/daily_batch_devotionals.log"
+load_dotenv()
+
+today = datetime.now()
+log_filename = f"./tmp/devotionals/{str(today.year)[-2:]}/{today.month}/daily_batch_devotionals_{str(today.year)[-2:]}-{today.month}-{today.day}.log"
 users_file_path = "./tmp/batch_users.json"
 
 logging.basicConfig(
@@ -20,8 +23,6 @@ logging.basicConfig(
         logging.StreamHandler(sys.stdout)
     ]
 )
-
-load_dotenv()
 
 def load_users_data():
     if os.path.exists(users_file_path):
