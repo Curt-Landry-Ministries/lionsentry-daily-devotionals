@@ -4,44 +4,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-import requests
-
-def send_keap_email_v2(access_token: str, contacts: list = None, send_to_addresses: list = None, cc_addresses: list = None):
-    """
-    Sends an email using Keap API v2.
-    """
-    url = "https://api.infusionsoft.com/crm/rest/v2/emails:send"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json"
-    }
-
-
-    # Construct payload
-    payload = {
-        "address_field": "string",
-        "contacts": [
-            contacts
-        ],
-        "html_content": "string",
-        "plain_content": "string",
-        "subject": "string",
-        "user_id": "string"
-    }
-    print(payload)
-
-    # Add optional fields if provided
-    if cc_addresses:
-        payload["cc_addresses"] = cc_addresses
-
-    response = requests.post(url, headers=headers, json=payload)
-
-    if response.status_code == 200:
-        return response.json()
-    else:
-        return {"error": response.status_code, "message": response.text}
-
-
 def get_keap_contact_id(access_token: str, email: str):
     """
     Searches Keap for a contact by email and returns the contact ID.
@@ -67,27 +29,68 @@ def get_keap_contact_id(access_token: str, email: str):
             return None  # No contact found
     else:
         return {"error": response.status_code, "message": response.text}
+    
+
+def update_keap_contact_field(contact_id, devotional_content, access_token):
+    """
+    Updates a custom field (ID 695) for a specific contact in Keap.
+    """
+    if contact_id <= 0:
+        return {"error": "Invalid contact_id. Must be greater than 0."}
+
+    url = f"https://api.infusionsoft.com/crm/rest/v1/contacts/{contact_id}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "custom_fields": [
+            {
+                "content": devotional_content,
+                "id": 695
+            }
+        ]
+    }
+
+    response = requests.patch(url, json=payload, headers=headers)
+    
+    return response.json() if response.status_code in [200, 201] else response.text
+    
+
+def trigger_keap_devotional_email(contact_id, access_token):
+    """
+    Triggers the Keap API devotional for a given contact ID.
+    """
+    if contact_id > 0:
+        url = "https://api.infusionsoft.com/crm/rest/v1/campaigns/goals/is104/sendlsdevotional"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {"contact_id": contact_id}
+
+        response = requests.post(url, json=payload, headers=headers)
+        
+        return response.json() if response.status_code == 200 else response.text
+    else:
+        return {"error": "Invalid contact_id. Must be greater than 0."}
+
+
 
 
 def main():
 
     # Example usage
     access_token = os.getenv("KEAP_API_KEY")
-    email = "tdunlavey@curtlandry.com"
+    email = ""
 
     contact_id = get_keap_contact_id(access_token, email)
     if contact_id:
         print(f"Contact ID for {email}: {contact_id}")
-        # Example usage
-        contacts = contact_id  # Contact IDs from Keap (optional)
-        send_to_addresses = ["lionsentry@curtlandry.com"]  # Direct email addresses (optional)
-        subject = "Exciting News!"
-        from_email = "lionsentry@curtlandry .com"
-        from_name = "Lionsentry"
-        cc_addresses = ["brandon@lionsentry.com"]
-
-        response = send_keap_email_v2(access_token, contacts, send_to_addresses, subject, from_email, from_name, cc_addresses)
-        print(response)
+        update_contact_field = update_keap_contact_field(contact_id, "Worship each day", access_token)
+        print(f"Keap Update Contact Response: {update_contact_field}")
+        keap_response = trigger_keap_devotional_email(contact_id, access_token)
+        print(f"Keap Email Trigger Response: {keap_response}")
     else:
         print(f"No contact found for {email}")
 
