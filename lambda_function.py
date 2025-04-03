@@ -3,6 +3,7 @@ import sys
 import json
 import pytz
 import logging
+import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from firebase_utils.firebase_admin_sdk import db
@@ -48,7 +49,6 @@ def is_valid_devotional(devotional):
     return all(devotional.get(field) and devotional[field].strip() for field in required_fields)
 
 def create_daily_devotionals():
-    results = []
     batch_size = 100
     query = db.collection('users').limit(batch_size)
     last_doc = None
@@ -78,7 +78,6 @@ def create_daily_devotionals():
                 user_doc = db.collection('users').document(user_id).get()
             except DeadlineExceeded as e:
                 logging.error(f"DeadlineExceeded fetching document for user {user_id}: {e}")
-                results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on get()"})
                 continue
 
             if user_doc.exists:
@@ -91,12 +90,10 @@ def create_daily_devotionals():
                         why_statement_docs = db.collection('whyStatements').where('forUser', '==', user_id).get()
                     except DeadlineExceeded as e:
                         logging.error(f"DeadlineExceeded fetching whyStatements for user {user_id}: {e}")
-                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on whyStatements"})
                         continue
 
                     if not why_statement_docs:
                         logging.error(f"Why Statement not found for user {user_id}")
-                        results.append({"user_id": user_id, "status": "failure", "error": "Why Statement not found"})
                         continue
 
                     why_statement = why_statement_docs[0].to_dict().get('whyStatement', '')
@@ -129,7 +126,6 @@ def create_daily_devotionals():
 
                     if not is_valid_devotional(devotional_content):
                         logging.error(f"Failed to generate valid devotional content for user {user_id} after {max_attempts} attempts.")
-                        results.append({"user_id": user_id, "status": "failure", "error": "Invalid devotional content"})
                         continue
 
                     devotional_record = {
@@ -150,38 +146,119 @@ def create_daily_devotionals():
                         devotional_ref = db.collection('devotionals').add(devotional_record)
                     except DeadlineExceeded as e:
                         logging.error(f"DeadlineExceeded adding devotional for user {user_id}: {e}")
-                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on add()"})
                         continue
-
+        
                     devotional_doc_id = devotional_ref[1].id
-                    devotional_record["doc_id"] = devotional_doc_id
 
+                    devotional_record["doc_id"] = devotional_doc_id
                     try:
                         db.collection('devotionals').document(devotional_doc_id).set(devotional_record)
                     except DeadlineExceeded as e:
                         logging.error(f"DeadlineExceeded setting devotional for user {user_id}: {e}")
-                        results.append({"user_id": user_id, "status": "failure", "error": "Deadline exceeded on set()"})
                         continue
 
-                    logging.info(devotional_record)
+                    #logging.info(devotional_record)
                     logging.info(f"Devotional uploaded for user {user_id} ({user_email})")
-                    results.append({"user_id": user_id, "status": "success"})
 
                     # Save user_id to users.json to prevent duplication
                     users_data[user_id] = {"processed_at": datetime.now(pytz.UTC).isoformat()}
                     save_users_data(users_data)
-
+                    trigger_email(user_email, devotional_content.get("introduction", ""))
                 else:
-                    logging.info(f"Skipping user {user_id} with missing email.")
+                    logging.info(f"Skipping user {user_id}")
+
             else:
                 logging.error(f"User {user_id} does not exist in the database")
-                results.append({"user_id": user_id, "status": "not_found"})
 
         # Prepare for the next batch using pagination
         last_doc = users_batch[-1]
         query = db.collection('users').order_by('__name__').start_after(last_doc).limit(batch_size)
 
-    return {"message": "Devotionals created successfully", "results": results}
+    return {"message": "Devotionals created successfully"}
+
+def trigger_email(email, devotional_data):
+    access_token = os.getenv("KEAP_API_KEY")
+
+    contact_id = get_keap_contact_id(access_token, email)
+    if contact_id:
+        logging.info(f"Contact ID for {email}: {contact_id}")
+        update_keap_contact_field(contact_id, devotional_data, access_token)
+        # print(f"Keap Update Contact Response: {update_contact_field}")
+        keap_response = trigger_keap_devotional_email(contact_id, access_token)
+        logging.info(f"Keap Email Trigger Response: {keap_response}")
+    else:
+        logging.info(f"No contact found for {email}")
+
+def get_keap_contact_id(access_token: str, email: str):
+    """
+    Searches Keap for a contact by email and returns the contact ID.
+    """
+    url = "https://api.infusionsoft.com/crm/rest/v1/contacts"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    params = {
+        "email": email,  # Search by email
+        "optional_properties": ["email_addresses"]  # Include email fields in response
+    }
+
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        data = response.json()
+        if "contacts" in data and len(data["contacts"]) > 0:
+            return data["contacts"][0]["id"]  # Return first match's ID
+        else:
+            return None  # No contact found
+    else:
+        return {"error": response.status_code, "message": response.text}
+    
+
+def update_keap_contact_field(contact_id, devotiona_data, access_token):
+    """
+    Updates a custom field (ID 695) for a specific contact in Keap.
+    """
+    if contact_id <= 0:
+        return {"error": "Invalid contact_id. Must be greater than 0."}
+
+    url = f"https://api.infusionsoft.com/crm/rest/v1/contacts/{contact_id}"
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "custom_fields": [
+            {
+                "content": devotiona_data,
+                "id": 695
+            }
+        ]
+    }
+
+    response = requests.patch(url, json=payload, headers=headers)
+    
+    return response.json() if response.status_code in [200, 201] else response.text
+    
+
+def trigger_keap_devotional_email(contact_id, access_token):
+    """
+    Triggers the Keap API devotional for a given contact ID.
+    """
+    if contact_id > 0:
+        url = "https://api.infusionsoft.com/crm/rest/v1/campaigns/goals/is104/sendlsdevotional"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json"
+        }
+        payload = {"contact_id": contact_id}
+
+        response = requests.post(url, json=payload, headers=headers)
+        
+        return response.json() if response.status_code == 200 else response.text
+    else:
+        return {"error": "Invalid contact_id. Must be greater than 0."}
 
 
 def lambda_handler(event, context):
@@ -194,3 +271,8 @@ def lambda_handler(event, context):
 if __name__ == "__main__":
     response = create_daily_devotionals()
     logging.info(response)
+
+
+
+
+

@@ -6,7 +6,6 @@ WORKDIR /var/task
 
 # Copy application code to the container
 COPY lambda_function.py .
-COPY utils.py .
 COPY generate_devotional.py .
 COPY firebase_utils/ firebase_utils/
 

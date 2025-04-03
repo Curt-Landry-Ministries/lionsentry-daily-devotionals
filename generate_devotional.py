@@ -180,7 +180,6 @@ STYLE_GUIDE = """
   </book_reference>
 """
 
-
 # Themes for each day of the week
 THEMES =  {
     "Monday":
@@ -198,7 +197,6 @@ THEMES =  {
     "Sunday":
     "Today's focus is on revival and awakening. Reflect on how God is stirring your heart and where He is calling you to bring revival. What steps can you take to carry His light into your community? Pray for awakening, both in your life and in the lives of those around you, as you walk boldly in your calling."
 }
-
 
 # Bible Verses
 VERSES = [    
