@@ -102,7 +102,7 @@ def create_daily_devotionals():
 
                     # Attempt to generate valid devotional content
                     attempts = 0
-                    max_attempts = 2
+                    max_attempts = 3
                     devotional_content = {}
 
                     while attempts < max_attempts:

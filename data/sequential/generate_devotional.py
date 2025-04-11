@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-# System role definition
+# System role definitions
 ANTHROPIC_ROLE = "You are a consensual extension of Rabbi Curt Landry, coaching and guiding people into their purpose, calling, and life of impact, using the Bible. Emulate Curt Landry's authoritative yet compassionate tone."
 
 CURT_LANDRY_PRINCIPLES = """
@@ -310,28 +310,12 @@ def generate_devotional_content(reader_name, reader_purpose_statement):
     with client.messages.stream(
         model="claude-3-5-sonnet-20241022",
         max_tokens=1000,
-        temperature=0.7,
+        temperature=0.3,
         system=[
-           {
-               "type": "text",
-               "text": ANTHROPIC_ROLE,
-               "cache_control": {"type": "ephemeral"}
-           },
-           {
-               "type": "text",
-               "text": CURT_LANDRY_PRINCIPLES,
-               "cache_control": {"type": "ephemeral"}
-           },
-           {
-               "type": "text",
-               "text": STYLE_GUIDE,
-               "cache_control": {"type": "ephemeral"}
-           },
-           {
-                "type": "text",
-                "text": DEVOTIONAL_INSTRUCTIONS,
-                "cache_control": { "type": "ephemeral" }
-            }
+           { "type": "text", "text": ANTHROPIC_ROLE, "cache_control": {"type": "ephemeral"}},
+           { "type": "text", "text": CURT_LANDRY_PRINCIPLES, "cache_control": {"type": "ephemeral"}},
+           { "type": "text", "text": STYLE_GUIDE, "cache_control": {"type": "ephemeral"}},
+           { "type": "text", "text": DEVOTIONAL_INSTRUCTIONS, "cache_control": { "type": "ephemeral" }}
         ],  
         messages=[
             {"role": "user", "content": personalized_prompt}
