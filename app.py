@@ -482,10 +482,23 @@ def generate_devotional_content():
 
 # Upload devotional content to firebase, trigger email
 def upload_db_user():
-    users_file_path="./tmp/users.json"
+    users_file_path = "./tmp/users.json"
+    uploaded_users_file_path = "./tmp/uploaded_users.json"
     success_count = 0
     fail_count = 0
 
+    # Load existing uploaded users
+    if os.path.exists(uploaded_users_file_path):
+        try:
+            with open(uploaded_users_file_path, "r") as f:
+                uploaded_users = json.load(f)
+        except (IOError, json.JSONDecodeError) as e:
+            logging.error(f"Failed to load uploaded_users.json: {e}")
+            uploaded_users = {}
+    else:
+        uploaded_users = {}
+
+    # Load user data
     try:
         with open(users_file_path, "r") as f:
             users_data = json.load(f)
@@ -494,6 +507,10 @@ def upload_db_user():
         return
 
     for user_id, user_data in users_data.items():
+        if user_id in uploaded_users:
+            logging.info(f"⏩ Skipping already uploaded user {user_id}")
+            continue
+
         user_email = user_data.get("email")
         devotional_content = user_data.get("devotional")
 
@@ -533,6 +550,17 @@ def upload_db_user():
             trigger_email(user_email, devotional_record["introduction"])
             logging.info(f"✅ Devotional email sent for user {user_id} ({user_email})")
             success_count += 1
+
+            # Immediately record successful upload
+            uploaded_users[user_id] = {
+                "timestamp": datetime.now(pytz.UTC).isoformat()
+            }
+            try:
+                with open(uploaded_users_file_path, "w") as f:
+                    json.dump(uploaded_users, f, indent=2)
+            except IOError as e:
+                logging.error(f"Failed to update uploaded_users.json for user {user_id}: {e}")
+
         except DeadlineExceeded as e:
             logging.error(f"DeadlineExceeded setting devotional for user {user_id}: {e}")
             fail_count += 1
