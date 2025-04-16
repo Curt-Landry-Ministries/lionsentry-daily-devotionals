@@ -1,9 +1,12 @@
+/tmp/*.log
+.DS_Store
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
 
 /package
+/firebase_utils/firebase_admin_sdk.json
 
 # C extensions
 *.so

@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 # Initialize Firebase Admin SDK with error handling
 try:
     #cred = credentials.Certificate(cred_dict)
-    cred = credentials.Certificate("firebase/firebase_admin_sdk.json")
+    cred = credentials.Certificate("firebase_utils/firebase_admin_sdk.json")
     
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
