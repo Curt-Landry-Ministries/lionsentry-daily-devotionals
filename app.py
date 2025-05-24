@@ -1,4 +1,4 @@
-import os, sys, json, glob, uuid, pytz, time, secrets, logging, anthropic, requests
+import os, sys, json, uuid, pytz, time, secrets, logging, anthropic, requests
 from datetime import datetime
 from dotenv import load_dotenv
 from firebase_utils.firebase_admin_sdk import db
@@ -8,9 +8,14 @@ from google.api_core.exceptions import DeadlineExceeded  # To catch timeout erro
 load_dotenv()
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
+base_path = "./tmp"
 today = datetime.now()
-log_filename = f"./tmp/devotionals/{str(today.year)[-2:]}/{today.month}/daily_batch_devotionals_{str(today.year)[-2:]}-{today.month}-{today.day}.log"
-users_file_path = "./tmp/users.json"
+os.makedirs(f"{base_path}/devotionals/{str(today.year)}/{today.month}/{today.day}", exist_ok=True)
+todays_file_path=f"{base_path}/devotionals/{str(today.year)}/{today.month}/{today.day}"
+log_filename = f"{todays_file_path}/daily_batch_devotionals_{str(today.year)[-2:]}-{today.month}-{today.day}.log"
+users_file_path = f"{todays_file_path}/users_{str(today.year)[-2:]}-{today.month}-{today.day}.json"
+uploaded_users_file_path = f"{todays_file_path}/uploaded_users_{str(today.year)[-2:]}-{today.month}-{today.day}.json"
+batch_id_file_path = f"{todays_file_path}/batch_id_{str(today.year)[-2:]}-{today.month}-{today.day}.txt"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -337,7 +342,7 @@ def monitor_batch(batch_id, poll_interval=60):
         time.sleep(poll_interval)
 
 # Process the batch response from anthropic
-def process_batch_results(results_url, users_file_path="./tmp/users.json"):
+def process_batch_results(results_url):
     # Load all users from users.json (keyed by user_id)
     try:
         with open(users_file_path, "r") as f:
@@ -413,7 +418,6 @@ def generate_prompt_template(reader_name, reader_purpose_statement):
 
 # Generate batch job for anthropic
 def generate_devotional_content():
-    users_file_path = "./tmp/users.json"
     user_map = {}
     requests = []
 
@@ -471,19 +475,17 @@ def generate_devotional_content():
     response = client.messages.batches.create(requests=requests)
 
     batch_id = response.id
-    with open("./tmp/last_batch_id.txt", "w") as f:
+    with open(batch_id_file_path, "w") as f:
         f.write(batch_id)
 
     monitor_batch(batch_id)
 
     logging.info(f"Batch {batch_id} completed and processed.")
-    upload_db_user()
+    upload_devotionals_to_firebase()
     return response
 
 # Upload devotional content to firebase, trigger email
-def upload_db_user():
-    users_file_path = "./tmp/users.json"
-    uploaded_users_file_path = "./tmp/uploaded_users.json"
+def upload_devotionals_to_firebase():
     success_count = 0
     fail_count = 0
 
@@ -664,7 +666,7 @@ def trigger_keap_devotional_email(contact_id, access_token):
     return response.json() if response.status_code == 200 else response.text
 
 # Create batch users from FB for batch processing
-def main():
+def start():
     batch_size = 500
     query = db.collection('users').order_by('__name__').limit(batch_size)
     last_doc = None
@@ -735,4 +737,4 @@ def main():
     logging.info(f"Finished user prep. Added {processed_count} new user(s) to users.json.")
     generate_devotional_content()
 
-if __name__ == "__main__": main()
+if __name__ == "__main__": start()

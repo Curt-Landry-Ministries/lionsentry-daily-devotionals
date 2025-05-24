@@ -1,17 +1,23 @@
-# Use the Amazon Linux 2 Lambda Python 3.11 base image
+# Use the AWS Lambda Python 3.11 base image
 FROM public.ecr.aws/lambda/python:3.11
 
-# Set working directory
-WORKDIR /var/task
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
 
-# Copy application code to the container
-COPY lambda_function.py .
-COPY generate_devotional.py .
-COPY firebase_utils/ firebase_utils/
+# Install required system dependencies
+RUN yum -y install gcc git
+
+# Create working directory
+WORKDIR /var/task
 
 # Copy and install Python dependencies
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt --target .
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Set the CMD to the handler (function name in lambda_function.py)
+# Copy source code
+COPY lambda_function.py ./
+COPY firebase_utils/ ./firebase_utils/
+
+# Set the entry point for Lambda
 CMD ["lambda_function.lambda_handler"]
