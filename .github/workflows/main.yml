@@ -1,0 +1,53 @@
+name: Build and Push Docker Image to Docker Hub
+
+on:
+  push:
+    branches:
+      - test
+      - qa
+      - main
+  pull_request:
+    branches:
+      - test
+      - qa
+      - main
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        if: github.event_name == 'push' && (github.ref_name == 'test' || github.ref_name == 'qa' || github.ref_name == 'main')
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Set Docker Tag
+        id: set_tag
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "qa" || "$BRANCH" == "test" ]]; then
+            echo "tag=$BRANCH" >> $GITHUB_ENV
+          else
+            echo "tag=tmp-${{ github.sha }}" >> $GITHUB_ENV
+          fi
+
+      - name: Build Docker image for amd64
+        run: |
+          docker buildx build \
+            -t lionsentry/daily-devotionals:${{ env.tag }} \
+            --load .
+
+      - name: Push Docker image to Docker Hub
+        if: github.event_name == 'push' && (github.ref_name == 'test' || github.ref_name == 'qa' || github.ref_name == 'main')
+        run: |
+          docker push lionsentry/daily-devotionals:${{ env.tag }}
