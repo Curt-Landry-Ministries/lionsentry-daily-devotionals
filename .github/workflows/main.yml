@@ -1,52 +1,59 @@
-name: Build and Push Docker Images
+name: Build and Push Docker Image to Docker Hub
 
 on:
   push:
     branches:
-      - test
-      - qa
       - main
+      - qa
+      - test
       - "**"  # Match any branch for temporary builds
   pull_request:
     branches:
-      - test
-      - qa
       - main
-      - "**"  # Match any branch for temporary builds
+      - qa
+      - test
+      - "**"
 
 env:
   AWS_REGION: us-east-1
-  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-  DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
 
 jobs:
   build_dockerhub_image:
     runs-on: ubuntu-latest
+    environment: DOCKER  # This gives access to env-scoped secrets
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v2
 
-      - name: Login to DockerHub
-        if: github.event_name == 'push' && (github.ref_name == 'test' || github.ref_name == 'qa' || github.ref_name == 'main')
-        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
-
       - name: Set Docker Tag
-        id: docker_tag
+        id: set_tag
         run: |
-          if [[ "${GITHUB_REF##*/}" == "main" || "${GITHUB_REF##*/}" == "qa" || "${GITHUB_REF##*/}" == "test" ]]; then
-            echo "tag=${GITHUB_REF##*/}" >> $GITHUB_ENV
+          BRANCH="${GITHUB_REF##*/}"
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "qa" || "$BRANCH" == "test" ]]; then
+            echo "tag=$BRANCH" >> $GITHUB_ENV
           else
-            echo "tag=tmp" >> $GITHUB_ENV
+            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+            echo "tag=tmp-${SHORT_SHA}" >> $GITHUB_ENV
           fi
 
-      - name: Build Docker Image
+      - name: Log Tag
+        run: echo "Docker tag: ${{ env.tag }}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to DockerHub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build Docker Image (amd64)
         run: |
-          # Sanitize the tag to remove any invalid characters
-          SAFE_TAG=$(echo ${{ env.tag }} | tr '/' '-' | tr '[:upper:]' '[:lower:]')
-          docker build -t lionsentry/daily-devotionals:$SAFE_TAG .
+          docker buildx build \
+            --platform linux/amd64 \
+            -t lionsentry/daily-devotionals:${{ env.tag }} \
+            --load .
 
       - name: Push Docker Image
-        if: github.event_name == 'push' && (github.ref_name == 'test' || github.ref_name == 'qa' || github.ref_name == 'main')
+        if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'qa' || github.ref_name == 'test')
         run: |
           docker push lionsentry/daily-devotionals:${{ env.tag }}
