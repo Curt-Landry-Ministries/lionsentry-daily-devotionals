@@ -6,7 +6,7 @@ on:
       - main
       - qa
       - test
-      - "**"  # Match any branch for temporary builds
+      - "**"
   pull_request:
     branches:
       - main
@@ -20,7 +20,7 @@ env:
 jobs:
   build_dockerhub_image:
     runs-on: ubuntu-latest
-    environment: DOCKER  # This gives access to env-scoped secrets
+    environment: DOCKER
 
     steps:
       - name: Checkout Repository
@@ -54,6 +54,6 @@ jobs:
             --load .
 
       - name: Push Docker Image
-        if: github.event_name == 'push' && (github.ref_name == 'main' || github.ref_name == 'qa' || github.ref_name == 'test')
+        if: github.ref_name == 'main' || github.ref_name == 'qa' || github.ref_name == 'test'
         run: |
           docker push lionsentry/daily-devotionals:${{ env.tag }}
