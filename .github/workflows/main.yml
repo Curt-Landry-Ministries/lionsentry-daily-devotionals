@@ -14,46 +14,41 @@ on:
       - test
       - "**"
 
-env:
-  AWS_REGION: us-east-1
-
 jobs:
   build_dockerhub_image:
     runs-on: ubuntu-latest
-    environment: DOCKER
+    environment: DOCKER  # This allows access to env-scoped secrets
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-      - name: Set Docker Tag
-        id: set_tag
+      - name: Set Docker tag
         run: |
           BRANCH="${GITHUB_REF##*/}"
           if [[ "$BRANCH" == "main" || "$BRANCH" == "qa" || "$BRANCH" == "test" ]]; then
-            echo "tag=$BRANCH" >> $GITHUB_ENV
+            echo "tag=$BRANCH" >> "$GITHUB_ENV"
           else
-            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
-            echo "tag=tmp-${SHORT_SHA}" >> $GITHUB_ENV
+            SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+            echo "tag=tmp-${SHORT_SHA}" >> "$GITHUB_ENV"
           fi
-
-      - name: Log Tag
-        run: echo "Docker tag: ${{ env.tag }}"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to DockerHub
+      - name: Log in to Docker Hub
         run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-      - name: Build Docker Image (amd64)
+      - name: Build Docker image
         run: |
+          echo "Building image with tag: ${{ env.tag }}"
           docker buildx build \
             --platform linux/amd64 \
             -t lionsentry/daily-devotionals:${{ env.tag }} \
             --load .
 
-      - name: Push Docker Image
-        if: github.ref_name == 'main' || github.ref_name == 'qa' || github.ref_name == 'test'
+      - name: Push Docker image
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'qa' || github.ref_name == 'test' }}
         run: |
+          echo "Pushing image: lionsentry/daily-devotionals:${{ env.tag }}"
           docker push lionsentry/daily-devotionals:${{ env.tag }}
