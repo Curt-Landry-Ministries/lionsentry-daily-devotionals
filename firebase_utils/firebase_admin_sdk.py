@@ -2,7 +2,7 @@ import os
 import sys
 import firebase_admin
 from firebase_admin import credentials, firestore, storage
-from backend.firebase.config import cred_dict
+from firebase_utils.config import cred_dict
 
 # Add the parent directory to the sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
