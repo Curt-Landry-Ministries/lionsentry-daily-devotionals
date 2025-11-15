@@ -1,4 +1,4 @@
-import os, sys, json, uuid, pytz, time, secrets, logging, anthropic, requests
+import os, re, sys, json, uuid, pytz, time, secrets, logging, anthropic, requests
 from datetime import datetime
 from dotenv import load_dotenv
 from firebase_utils.firebase_admin_sdk import db
@@ -225,7 +225,7 @@ DEVOTIONAL_INSTRUCTIONS = """
       </journal>
     </format>
     <rules>
-      1. Return the response as JSON.
+      1. Return the response as JSON. 
       2. Tailor the output to the context and reader's profile and purpose statement.
       3. Don't include word counts in the output.
       4. Provide only the requested information. Your response will be used in an application expecting just the requested content. No filler.
@@ -343,6 +343,25 @@ def monitor_batch(batch_id, poll_interval=60):
 
 # Process the batch response from anthropic
 def process_batch_results(results_url):
+    """
+    Process an Anthropic batch results NDJSON file and update users.json with the parsed devotional JSON.
+    This version preserves existing behavior and adds robust handling for Markdown-wrapped JSON (```json ... ```).
+    """
+    # Helper to pull clean JSON text from a response that may be wrapped in Markdown fences
+    def _extract_json_text(text: str) -> str:
+        if not isinstance(text, str):
+            return ""
+        t = text.strip()
+
+        # 1) If there's any fenced block, grab the first fenced region
+        fenced = re.search(r"```(?:json|JSON)?\s*\n(.*?)\n```", t, flags=re.DOTALL)
+        if fenced:
+            return fenced.group(1).strip()
+
+        # 2) Otherwise, remove a single leading/trailing fence if present
+        t = re.sub(r"^```(?:json|JSON)?\s*|\s*```$", "", t, flags=re.IGNORECASE).strip()
+        return t
+
     # Load all users from users.json (keyed by user_id)
     try:
         with open(users_file_path, "r") as f:
@@ -352,10 +371,13 @@ def process_batch_results(results_url):
         return
 
     # Download Anthropic results (NDJSON format)
-    response = requests.get(results_url, headers={
-        "x-api-key": os.environ["ANTHROPIC_API_KEY"],
-        "anthropic-version": "2023-06-01"
-    })
+    response = requests.get(
+        results_url,
+        headers={
+            "x-api-key": os.environ.get("ANTHROPIC_API_KEY", ""),
+            "anthropic-version": "2023-06-01",
+        },
+    )
 
     if response.status_code != 200:
         logging.error(f"Failed to fetch results: {response.status_code} - {response.text}")
@@ -371,21 +393,24 @@ def process_batch_results(results_url):
             content_blocks = message.get("content", [])
 
             # Extract the first text block
-            text_block = next((b["text"] for b in content_blocks if b.get("type") == "text"), None)
+            text_block = next((b.get("text") for b in content_blocks if b.get("type") == "text"), None)
             if text_block is None:
                 logging.warning(f"No text content found for {custom_id}")
                 continue
 
+            # Clean md-style code and try to parse JSON
+            clean_text = _extract_json_text(text_block)
+
             try:
-                devotional_data = json.loads(text_block)
+                devotional_data = json.loads(clean_text)
             except json.JSONDecodeError as e:
                 logging.warning(f"Could not parse devotional JSON for {custom_id}: {e}")
-                devotional_data = {"raw_text": text_block}
+                devotional_data = {"raw_text": clean_text if clean_text else text_block}
 
             # Find the user_id by matching custom_id
             matched_user_id = next(
                 (uid for uid, data in users_data.items() if data.get("custom_id") == custom_id),
-                None
+                None,
             )
 
             if matched_user_id:
@@ -443,7 +468,7 @@ def generate_devotional_content():
         request_obj = {
             "custom_id": custom_id,
             "params": {
-                "model": "claude-3-5-sonnet-20241022",
+                "model": "claude-3-7-sonnet-20250219",
                 "max_tokens": 1000,
                 "temperature": 0.3,
                 "system": [
