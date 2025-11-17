@@ -1,0 +1,54 @@
+name: Build and Push Docker Image to Docker Hub
+
+on:
+  push:
+    branches:
+      - main
+      - qa
+      - test
+      - "**"
+  pull_request:
+    branches:
+      - main
+      - qa
+      - test
+      - "**"
+
+jobs:
+  build_dockerhub_image:
+    runs-on: ubuntu-latest
+    environment: DOCKER  # This allows access to env-scoped secrets
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set Docker tag
+        run: |
+          BRANCH="${GITHUB_REF##*/}"
+          if [[ "$BRANCH" == "main" || "$BRANCH" == "qa" || "$BRANCH" == "test" ]]; then
+            echo "tag=$BRANCH" >> "$GITHUB_ENV"
+          else
+            SHORT_SHA=$(echo "${GITHUB_SHA}" | cut -c1-7)
+            echo "tag=tmp-${SHORT_SHA}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build Docker image
+        run: |
+          echo "Building image with tag: ${{ env.tag }}"
+          docker buildx build \
+            --platform linux/amd64 \
+            -t lionsentry/daily-devotionals:${{ env.tag }} \
+            --load .
+
+      - name: Push Docker image
+        if: ${{ github.ref_name == 'main' || github.ref_name == 'qa' || github.ref_name == 'test' }}
+        run: |
+          echo "Pushing image: lionsentry/daily-devotionals:${{ env.tag }}"
+          docker push lionsentry/daily-devotionals:${{ env.tag }}
