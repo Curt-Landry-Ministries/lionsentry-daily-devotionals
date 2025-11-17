@@ -573,6 +573,7 @@ def upload_devotionals_to_firebase():
             continue
 
         try:
+            time.sleep(1) 
             db.collection("devotionals").document(devotional_doc_id).set(devotional_record)
             trigger_email(user_email, devotional_record["introduction"])
             logging.info(f"✅ Devotional email sent for user {user_id} ({user_email})")
